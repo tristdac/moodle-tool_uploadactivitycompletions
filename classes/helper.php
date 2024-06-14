@@ -128,69 +128,166 @@ class tool_uploadactivitycompletions_helper {
      * @return object $response contains details of processing
      */
     public static function mark_activity_as_completed($record, $studentrole) {
-        global $DB, $USER;
+    global $DB, $USER;
 
-        $response = new \stdClass();
-        $response->added = 0;
-        $response->skipped = 0;
-        $response->error = 0;
-        $response->message = null;
+    $response = new \stdClass();
+    $response->added = 0;
+    $response->skipped = 0;
+    $response->updated = 0;
+    $response->error = 0;
+    $response->message = null;
 
-        // Get the course record.
-        if ($course = self::get_course_by_field($record->coursefield, $record->coursevalue)) {
-            $response->course = $course;
+    // Log start of function
+    //error_log('Start of mark_activity_as_completed function');
 
-            $completion = new completion_info($course);
-            if ($completion->is_enabled()) {
-
-                // get the user record
-                if ($user =self::get_user_by_field($record->userfield, $record->uservalue)) {
-                    $response->user = $user;
-                    if ($cm = self::find_activity_in_section($course,$record->sectionname,$record->activityname)) {
-
-                            // ensure the user is enrolled in this course
-                            enrol_try_internal_enrol($course->id, $user->id, $studentrole->id);
-
-                            // test the current completion state to avoid re-completion
-                            $currentstate = $completion->get_data($cm, false, $user->id, null);
-                            if ($currentstate->completionstate == COMPLETION_COMPLETE) {
-                                $response->message = 'Activity "' . $record->activityname . '" in topic "' . $record->sectionname . '" was already completed';
-                                $response->skipped = 1;
-                                $response->added = 0;
-                            } else {
-                                // if the user can't override completion we need to bail
-                                if (!$completion->user_can_override_completion($USER)) {
-                                    $response->message = 'Configured user unable to override completion in course ' . $course->fullname;
-                                    $response->skipped = 1;
-                                    $response->added = 0;
-                                } else {
-                                    // override completion of this activity
-                                    $completion->update_state($cm, COMPLETION_COMPLETE, $user->id, true);
-                                    $response->message = 'Activity "' . $record->activityname . '" in topic "' . $record->sectionname . '" was completed on behalf of user.';
-                                    $response->skipped = 0;
-                                    $response->added = 1;
-                                }
-                            }
-                    } else {
-                        $response->message = 'Unable to find activity "' . $record->activityname . '" in topic "' . $record->sectionname . '" in course "' . $course->fullname . '"';
-                        $response->skipped = 1;
-                        $response->added = 0;
-                    }
-                } else {
-                    $response->message = 'Unable to find user matching "' . $record->uservalue . '"';
-                    $response->skipped = 1;
-                    $response->added = 0;
-                }
-            } else {
-                $response->message = 'Course "' . $course->fullname . '" does not have completions enabled';
-                $response->skipped = 1;
-                $response->added = 0;
-            }
-        } else {
-            $response->message = 'Unable to find course matching "' . $record->coursevalue . '"';
-            $response->skipped = 1;
-            $response->added = 0;
-        }
+    // Validate the student role object
+    if (!is_object($studentrole) || !isset($studentrole->id)) {
+        //error_log('Invalid student role object: ' . print_r($studentrole, true));
+        $response->message = 'Invalid student role object';
+        $response->error = 1;
         return $response;
     }
+
+    // Get the course record.
+    if ($course = self::get_course_by_field($record->coursefield, $record->coursevalue)) {
+        //error_log('Course found: ' . $course->fullname);
+        $response->course = $course;
+
+        $completion = new completion_info($course);
+        if ($completion->is_enabled()) {
+            //error_log('Completion is enabled for course');
+
+            // Get the user record.
+            if ($user = self::get_user_by_field($record->userfield, $record->uservalue)) {
+                //error_log('User found: ' . $user->username);
+                $response->user = $user;
+                if ($cm = self::find_activity_in_section($course, $record->sectionname, $record->activityname)) {
+                    //error_log('Activity found: ' . $record->activityname);
+
+                    // Ensure the user is enrolled in this course.
+                    enrol_try_internal_enrol($course->id, $user->id, $studentrole->id);
+                    //error_log('User enrolled in course');
+
+                    // Test the current completion state to avoid re-completion.
+                    $currentstate = $completion->get_data($cm, false, $user->id, null);
+                    //error_log('Current completion state: ' . $currentstate->completionstate);
+
+                    if ($currentstate->completionstate == COMPLETION_COMPLETE) {
+                        //error_log('Activity already completed');
+                        // Activity already completed, update the completion date if needed.
+                        $completion_record = $DB->get_record('course_modules_completion', array('coursemoduleid' => $cm->id, 'userid' => $user->id, 'completionstate' => 1));
+                        if ($completion_record) {
+                            //error_log('Completion record found');
+                            if ($completion_record->timemodified != $record->completiondate) {
+                                //error_log('Updating completion date from ' . $completion_record->timemodified . ' to ' . $record->completiondate);
+                                $completion_record->timemodified = $record->completiondate;
+                                $DB->update_record('course_modules_completion', $completion_record);
+                                //error_log('Completion date updated');
+                                $response->message = 'Activity "' . $record->activityname . '" in topic "' . $record->sectionname . '" was already completed but the completion date was updated.';
+                                $response->updated = 1;
+                            } else {
+                                //error_log('Completion date is the same, no update needed');
+                                $response->message = 'Activity "' . $record->activityname . '" in topic "' . $record->sectionname . '" was already completed and the completion date is the same.';
+                                $response->skipped = 1;
+                            }
+                        } else {
+                            //error_log('Completion record not found');
+                        }
+                    } else {
+                        //error_log('Activity not completed, attempting to complete it');
+
+                        // Ensure the user can override completion
+                        if (!$completion->user_can_override_completion($USER)) {
+                            $response->message = 'Configured user unable to override completion in course ' . $course->fullname;
+                            $response->skipped = 1;
+                            //error_log('User cannot override completion');
+                        } else {
+                            // Log before updating state
+                            //error_log('Updating state to COMPLETION_COMPLETE');
+                            try {
+                                $update_result = $completion->update_state($cm, COMPLETION_COMPLETE, $user->id, true);
+                                //error_log('update_state returned: ' . ($update_result ? 'true' : 'false'));
+
+                                // If update_state is successful, proceed with updating the date
+                                if ($update_result || $completion->get_data($cm, false, $user->id, null)->completionstate == COMPLETION_COMPLETE) {
+                                    //error_log('Completion state updated');
+
+                                    // Clear relevant caches immediately
+                                    cache_helper::purge_by_definition('core', 'completion');
+                                    //error_log('Caches purged');
+
+                                    // Loop to check for the record before updating the completion date.
+                                    for ($i = 0; $i < 10; $i++) { // Try up to 10 times.
+                                        $completion_record = $DB->get_record('course_modules_completion', array('coursemoduleid' => $cm->id, 'userid' => $user->id, 'completionstate' => 1));
+                                        if ($completion_record) {
+                                            //error_log('Completion record found after state update');
+                                            break;
+                                        }
+                                        usleep(50000); // Wait 50 milliseconds before retrying.
+                                    }
+
+                                    if ($completion_record) {
+                                        //error_log('Setting completion date to ' . $record->completiondate);
+                                        $completion_record->timemodified = $record->completiondate;
+                                        $DB->update_record('course_modules_completion', $completion_record);
+                                        //error_log('Completion date set after state update');
+                                        $response->message = 'Activity "' . $record->activityname . '" in topic "' . $record->sectionname . '" was completed on behalf of user.';
+                                        $response->added = 1;
+
+                                        // Ensure course completion and criteria dates are also updated.
+                                        $course_completion_record = $DB->get_record('course_completions', array('userid' => $user->id, 'course' => $course->id));
+                                        if ($course_completion_record) {
+                                            //error_log('Setting course completion date to ' . $record->completiondate);
+                                            $course_completion_record->timecompleted = $record->completiondate;
+                                            $course_completion_record->timestarted = $record->completiondate;
+                                            $DB->update_record('course_completions', $course_completion_record);
+                                            //error_log('Course completion date updated');
+                                        }
+
+                                        $course_completion_criteria = $DB->get_record('course_completion_crit_compl', array('userid' => $user->id, 'course' => $course->id));
+                                        if ($course_completion_criteria) {
+                                            //error_log('Setting course completion criteria date to ' . $record->completiondate);
+                                            $course_completion_criteria->timecompleted = $record->completiondate;
+                                            $DB->update_record('course_completion_crit_compl', $course_completion_criteria);
+                                            //error_log('Course completion criteria date updated');
+                                        }
+                                    } else {
+                                        $response->message = 'Failed to retrieve the completion record for updating.';
+                                        $response->error = 1;
+                                        //error_log('Failed to retrieve completion record for updating');
+                                    }
+                                } else {
+                                    //error_log('Failed to update completion state');
+                                }
+                            } catch (Exception $e) {
+                                //error_log('Exception in update_state: ' . $e->getMessage());
+                                $response->message = 'Exception occurred while updating completion state: ' . $e->getMessage();
+                                $response->error = 1;
+                            }
+                        }
+                    }
+                } else {
+                    $response->message = 'Unable to find activity "' . $record->activityname . '" in topic "' . $record->sectionname . '" in course "' . $course->fullname . '"';
+                    $response->skipped = 1;
+                    //error_log('Activity not found');
+                }
+            } else {
+                $response->message = 'Unable to find user matching "' . $record->uservalue . '"';
+                $response->skipped = 1;
+                //error_log('User not found');
+            }
+        } else {
+            $response->message = 'Course "' . $course->fullname . '" does not have completions enabled';
+            $response->skipped = 1;
+            //error_log('Completion not enabled for course');
+        }
+    } else {
+        $response->message = 'Unable to find course matching "' . $record->coursevalue . '"';
+        $response->skipped = 1;
+        //error_log('Course not found');
+    }
+    //error_log('End of mark_activity_as_completed function');
+    return $response;
+}
+
 }

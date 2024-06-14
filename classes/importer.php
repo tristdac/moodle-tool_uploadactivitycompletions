@@ -112,7 +112,8 @@ class tool_uploadactivitycompletions_importer {
             'username',
             'useridnumber',
             'sectionname',
-            'activityname'
+            'activityname',
+            'completiondate' // Tristan addition
         );
     }
 
@@ -139,7 +140,8 @@ class tool_uploadactivitycompletions_importer {
                 'username' => $data->header2,
                 'useridnumber' => $data->header3,
                 'sectionname' => $data->header4,
-                'activityname' => $data->header5
+                'activityname' => $data->header5,
+                'completiondate' => $data->header6 // Tristan addition
             );
         } else {
             return array(
@@ -148,7 +150,8 @@ class tool_uploadactivitycompletions_importer {
                 'username' => 2,
                 'useridnumber' => 3,
                 'sectionname' => 4,
-                'activityname' => 5
+                'activityname' => 5,
+                'completiondate' => 6 // Tristan addition
             );
         }
     }
@@ -200,7 +203,7 @@ class tool_uploadactivitycompletions_importer {
         require_once($CFG->libdir . '/csvlib.class.php');
 
         $type = 'courseactivitycompletion';
-        $this->studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->studentrole = $DB->get_record('role', array('id' => '5'));
 
         if (!$importid) {
             if ($text === null) {
@@ -265,6 +268,7 @@ class tool_uploadactivitycompletions_importer {
 
               $record->sectionname = $this->get_row_data($row, $mapping['sectionname']);
               $record->activityname = $this->get_row_data($row, $mapping['activityname']);
+              $record->completiondate = $this->get_row_data($row, $mapping['completiondate']);   // Tristan addition
 
              // $record->timestamp = $this->get_row_data($row, $mapping['timestamp']);
               array_push($records, $record);
@@ -294,12 +298,12 @@ class tool_uploadactivitycompletions_importer {
      */
     public function execute($tracker = null) {
         if ($this->processstarted) {
-              throw new coding_exception('Process has already been started');
+            throw new coding_exception('Process has already been started');
         }
         $this->processstarted = true;
 
         if (empty($tracker)) {
-              $tracker = new tool_uploadactivitycompletions_tracker(tool_uploadactivitycompletions_tracker::NO_OUTPUT);
+            $tracker = new tool_uploadactivitycompletions_tracker(tool_uploadactivitycompletions_tracker::NO_OUTPUT);
         }
         $tracker->start();
 
@@ -308,39 +312,58 @@ class tool_uploadactivitycompletions_importer {
         $total = 0;
         $added = 0;
         $skipped = 0;
+        $updated = 0;
         $errors = 0;
 
         // We will most certainly need extra time and memory to process big files.
         core_php_time_limit::raise();
         raise_memory_limit(MEMORY_EXTRA);
 
+        // Log the studentrole object to verify it
+        //error_log('Student role: ' . print_r($this->studentrole, true));
+
         // Now actually do the work.
         foreach ($records as $record) {
             $this->linenb++;
             $total++;
 
+            //error_log('Processing record ' . $this->linenb);
+
             if (tool_uploadactivitycompletions_helper::validate_import_record($record)) {
+                //error_log('Record validated');
 
                 $response = tool_uploadactivitycompletions_helper::mark_activity_as_completed($record, $this->studentrole);
-                $added = $added + $response->added;
-                $skipped = $skipped + $response->skipped;
+                $added += $response->added;
+                $skipped += $response->skipped;
+                $updated += $response->updated;
 
                 if ($response->added != 0) {
                     $status = array("Activity completion added", $response->message);
+                } elseif ($response->updated != 0) {
+                    $status = array("Activity completion updated", $response->message);
                 } else {
                     $status = array("Activity completion skipped", $response->message);
                 }
 
                 $tracker->output($this->linenb, true, $status, $response);
+                //error_log('Tracker output for record ' . $this->linenb);
             } else {
                 $errors++;
                 $status = array("Invalid Import Record");
                 $tracker->output($this->linenb, false, $status, null);
+                //error_log('Invalid import record for record ' . $this->linenb);
             }
         }
+        $caches = 1;
+        // We're updating completion dates, so must purge caches for changes to be visible
+        purge_all_caches();
+        //error_log('Caches purged after processing all records');
 
         $tracker->finish();
-        $tracker->results($total, $added, $skipped, $errors);
+        $tracker->results($total, $added, $skipped, $updated, $errors);
+        $tracker->caches();
+        //error_log('Tracker finished');
         return $tracker->get_buffer();
     }
+
 }

@@ -47,6 +47,7 @@ $string['uploadactivitycompletionsresult'] = 'Upload results';
 $string['completionstotal'] = 'Completions total: {$a}';
 $string['completionsadded'] = 'Completions added: {$a}';
 $string['completionsskipped'] = 'Completions skipped: {$a}';
+$string['completionsupdated'] = 'Completions updated: {$a}';
 $string['completionserrors'] = 'Completions errors: {$a}';
 
 // CLI.
@@ -61,9 +62,10 @@ $string['tool_intro'] = "
 <li>You need to specify the user name or idnumber.</li>
 <li>You need to specify the section (topic) name that contains the activity to complete (case insensitive). If your activity is in the top section, write '0' as your topic name.</li>
 <li>You need to specify the name of the activity to complete (e.g. the page, quiz, scorm, url, etc). This activity needs to have completion enabled.</li>
+<li>You need to specify the completion date in Unix Timestamp format (Optional)</li>
 </ul>
 <p>The csv column names are [<a download href='/admin/tool/uploadactivitycompletions/example.csv'>Sample</a>]:</p>
-<p><code>coursename, courseidnumber, username, useridnumber, sectionname, activityname</code></p>
+<p><code>coursename, courseidnumber, username, useridnumber, sectionname, activityname, completiondate</code></p>
 <p>If you specify both coursename/idnumber or username/idnumber it the idnumber will take precedence.</p>
 ";
 

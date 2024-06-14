@@ -106,10 +106,11 @@ class tool_uploadactivitycompletions_tracker {
      * @param int $total total completions.
      * @param int $added count of completions added.
      * @param int $skipped count of completions skipped.
+     * @param int $updated count of completions updated.
      * @param int $errors count of errors.
      * @return void
      */
-    public function results($total, $added, $skipped, $errors) {
+    public function results($total, $added, $skipped, $updated, $errors) {
         if ($this->outputmode == self::NO_OUTPUT) {
             return;
         }
@@ -118,6 +119,7 @@ class tool_uploadactivitycompletions_tracker {
             get_string('completionstotal', 'tool_uploadactivitycompletions', $total),
             get_string('completionsadded', 'tool_uploadactivitycompletions', $added),
             get_string('completionsskipped', 'tool_uploadactivitycompletions', $skipped),
+            get_string('completionsupdated', 'tool_uploadactivitycompletions', $updated),
             get_string('completionserrors', 'tool_uploadactivitycompletions', $errors)
         );
 
@@ -246,6 +248,10 @@ class tool_uploadactivitycompletions_tracker {
             return "";
         }
         return $this->buffer->get_buffer();
+    }
+
+    public function caches() {
+        $this->buffer->output(html_writer::tag('span', "All caches have been cleared", array('id' => 'cacheclear')));
     }
 
 }
